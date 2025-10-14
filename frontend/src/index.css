@@ -105,3 +105,21 @@ body {
   justify-content: space-between;
   align-items: center;
 }
+
+.btn-group {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.btn.outline {
+  background: transparent;
+  border: 2px solid #fff300;
+  color: #fff300;
+}
+
+.btn.outline:hover {
+  background: #fff300;
+  color: #000;
+}

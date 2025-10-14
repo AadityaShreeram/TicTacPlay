@@ -3,6 +3,7 @@ import io from "socket.io-client";
 import Board from "./components/Board";
 import Leaderboard from "./components/Leaderboard";
 import Matchmaking from "./components/Matchmaking";
+import "./App.css";
 
 const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:4000");
 
@@ -10,10 +11,16 @@ export default function App() {
   const [game, setGame] = useState(null);
   const [winner, setWinner] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [nickname, setNickname] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [matchData, setMatchData] = useState(null);
+
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
   const fetchLeaderboard = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || "http://localhost:4000"}/leaderboard`);
+      const res = await fetch(`${backendUrl}/leaderboard`);
       const data = await res.json();
       setLeaderboard(data);
     } catch (err) {
@@ -34,30 +41,71 @@ export default function App() {
       fetchLeaderboard();
     });
 
+    socket.on("matched", (data) => {
+      console.log("Matched event received:", data);
+
+      setMatchData(data);
+      setTransitioning(true);
+      setSearching(false);
+
+      setTimeout(() => {
+        handleMatched(data);
+        setTransitioning(false);
+        setMatchData(null);
+      }, 3000); 
+    });
+
     return () => {
       socket.off("game_state");
       socket.off("game_over");
+      socket.off("matched");
     };
   }, []);
+
+  const handleMatched = ({ roomId, side, opponent }) => {
+    console.log("handleMatched called:", { roomId, side, opponent });
+    setGame({
+      roomId,
+      side,
+      opponent,
+      board: Array(9).fill(null),
+      turn: "x",
+      status: "playing",
+    });
+    setWinner(null);
+    setSearching(false);
+  };
+
+  const handleMatchStart = (name) => {
+    console.log("Emitting find_match with", name);
+    setNickname(name);
+    setSearching(true);
+    socket.emit("find_match", { nickname: name });
+  };
 
   const handleMove = (index) => {
     if (!game || game.status !== "playing") return;
     socket.emit("move_made", { roomId: game.roomId, index });
   };
 
-  const handleMatched = ({ roomId, side, opponent }) => {
-    setGame({ roomId, side, opponent, board: Array(9).fill(null), turn: "x", status: "playing" });
-    setWinner(null);
-  };
-
-  const resetGame = () => {
+  const handlePlayAgain = () => {
+    if (!nickname) return;
+    console.log("Play Again triggered for", nickname);
     setGame(null);
     setWinner(null);
+    handleMatchStart(nickname);
+  };
+
+  const handleNewPlayer = () => {
+    setNickname(null);
+    setGame(null);
+    setWinner(null);
+    setSearching(false);
   };
 
   const resetLeaderboard = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || "http://localhost:4000"}/reset`, { method: "POST" });
+      const res = await fetch(`${backendUrl}/reset`, { method: "POST" });
       const data = await res.json();
       if (data.ok) fetchLeaderboard();
     } catch (err) {
@@ -69,13 +117,46 @@ export default function App() {
     <div className="app">
       <h1 className="title">TicTacPlay</h1>
 
-      {!game && <Matchmaking socket={socket} onMatched={handleMatched} />}
+      {!game && !searching && !transitioning && (
+        <Matchmaking socket={socket} onFindMatch={handleMatchStart} nickname={nickname} />
+      )}
 
-      {game && (
-        <div className="game-card">
+      {searching && (
+        <div className="searching-container fade">
+          🎯 Searching for a match as <b>{nickname}</b>...
+        </div>
+      )}
+
+      {transitioning && matchData && (
+        <div className="versus-screen">
+          <div className="match-found-text">
+            ⚡ Match found! Getting ready...
+          </div>
+          
+          <div className="versus-container">
+            <div className="player-box">
+              <div className="player-name">{nickname}</div>
+              <div className="player-side">{matchData.side?.toUpperCase()}</div>
+            </div>
+            
+            <div className="versus-divider">VS</div>
+            
+            <div className="player-box">
+              <div className="player-name">{matchData.opponent}</div>
+              <div className="player-side">
+                {matchData.side === 'x' ? 'O' : 'X'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {game && !transitioning && (
+        <div className="game-card fade-in">
           <h2>
-            Playing as <span className="highlight">{game.side.toUpperCase()}</span> vs{" "}
-            <span className="highlight">{game.opponent}</span>
+            Playing as{" "}
+            <span className="highlight">{game.side?.toUpperCase() || "?"}</span> vs{" "}
+            <span className="highlight">{game.opponent || "?"}</span>
           </h2>
 
           <Board board={game.board} onClick={handleMove} turn={game.turn} />
@@ -83,7 +164,14 @@ export default function App() {
           {game.status === "finished" && (
             <div className="result">
               <h3>Winner: {winner === "draw" ? "Draw" : winner}</h3>
-              <button className="btn" onClick={resetGame}>Play Again</button>
+              <div className="btn-group">
+                <button className="btn" onClick={handlePlayAgain}>
+                  Play Again
+                </button>
+                <button className="btn outline" onClick={handleNewPlayer}>
+                  New Player
+                </button>
+              </div>
             </div>
           )}
         </div>

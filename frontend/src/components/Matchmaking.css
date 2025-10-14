@@ -1,0 +1,38 @@
+.matchmaking-container {
+  margin-top: 2rem;
+}
+
+.matchmaking-input {
+  padding: 8px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #555;
+  margin-right: 10px;
+  background-color: #222;
+  color: #fff300;
+}
+
+.matchmaking-input::placeholder {
+  color: rgba(255, 243, 0, 0.5);
+}
+
+.matchmaking-input:focus {
+  outline: none;
+  border-color: #fff300;
+}
+
+.matchmaking-button {
+  padding: 8px 16px;
+  background-color: #fff300;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.matchmaking-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 243, 0, 0.3);
+}

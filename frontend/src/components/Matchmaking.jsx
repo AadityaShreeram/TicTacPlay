@@ -1,38 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import "./Matchmaking.css";
 
-export default function Matchmaking({ socket, onMatched }) {
-  const [nickname, setNickname] = useState("");
-  const [queued, setQueued] = useState(false);
-
+export default function Matchmaking({ socket, onFindMatch, nickname: existingName }) {
+  const [nickname, setNickname] = useState(existingName || "");
+  
   const joinMatch = () => {
-    if (!nickname) return alert("Enter nickname!");
-    setQueued(true);
-    socket.emit("find_match", { nickname });
+    const name = nickname.trim();
+    if (!name) return alert("Enter nickname!");
+    console.log("Emitting find_match with", name);
+    onFindMatch(name);
   };
 
-  useEffect(() => {
-    socket.on("matched", (data) => {
-      setQueued(false);
-      onMatched(data);
-    });
-    socket.on("queued", () => setQueued(true));
-
-    return () => {
-      socket.off("matched");
-      socket.off("queued");
-    };
-  }, [socket, onMatched]);
-
   return (
-    <div className="matchmaking-card">
+    <div className="matchmaking-container">
       <input
-        className="input"
+        className="matchmaking-input"
         placeholder="Enter nickname"
         value={nickname}
         onChange={(e) => setNickname(e.target.value)}
+        onKeyPress={(e) => e.key === "Enter" && joinMatch()}
       />
-      <button className="btn" onClick={joinMatch} disabled={queued}>
-        {queued ? "Searching..." : "Find Match"}
+      <button className="matchmaking-button" onClick={joinMatch}>
+        Find Match
       </button>
     </div>
   );
