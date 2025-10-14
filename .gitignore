@@ -1,0 +1,9 @@
+# Docker
+docker-compose.override.yml
+*.dockerfile
+
+# OS / IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
