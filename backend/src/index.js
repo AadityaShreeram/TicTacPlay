@@ -24,13 +24,12 @@ const PORT = process.env.PORT || 4000;
 const gm = new GameManager();
 const mm = new Matchmaking();
 
-// Utility to build room id
 function makeRoomId(aSocketId, bSocketId) {
   return `room_${Date.now()}_${Math.floor(Math.random() * 10000)}_${aSocketId}_${bSocketId}`;
 }
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'TicTacPlay backend is running ✅' });
+  res.json({ status: 'ok', message: 'TicTacPlay backend is running' });
 });
 
 app.get('/leaderboard', async (req, res) => {
@@ -56,7 +55,6 @@ app.post('/reset', async (req, res) => {
 io.on('connection', (socket) => {
   console.log('socket connected', socket.id);
 
-  // store nickname on socket.data when provided
   socket.on('find_match', async ({ nickname }) => {
     if (!nickname) {
       socket.emit('error_msg', { message: 'nickname_required' });
@@ -65,21 +63,17 @@ io.on('connection', (socket) => {
 
     socket.data.nickname = nickname;
 
-    // Enqueue player
     await mm.enqueue({ socketId: socket.id, nickname });
 
-    // Try match
     const pair = await mm.tryMatch();
     if (pair) {
       const { a, b } = pair;
-      // create room and assign X / O deterministically (a -> x, b -> o)
       const roomId = makeRoomId(a.socketId, b.socketId);
       const playerX = a.nickname;
       const playerO = b.nickname;
 
       gm.createRoom(roomId, playerX, playerO);
 
-      // join both sockets into the room and emit matched
       const sa = io.sockets.sockets.get(a.socketId);
       const sb = io.sockets.sockets.get(b.socketId);
 
@@ -94,7 +88,6 @@ io.on('connection', (socket) => {
         sb.data.nickname = playerO;
       }
 
-      // send initial state
       const room = gm.getRoom(roomId);
       io.to(roomId).emit('game_state', { board: room.board, turn: room.turn, status: room.status });
     } else {
@@ -123,7 +116,6 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('game_state', { board: room.board, turn: room.turn, status: room.status });
 
     if (room.status === 'finished') {
-      // persist result
       try {
         await recordResult({ x: room.players.x, o: room.players.o, winner: room.winner, moves: room.moves });
       } catch (err) {
@@ -131,19 +123,16 @@ io.on('connection', (socket) => {
       }
 
       io.to(roomId).emit('game_over', { winner: room.winner });
-      // keep room for short time then remove
       setTimeout(() => gm.removeRoom(roomId), 60_000);
     }
   });
 
   socket.on('disconnect', async (reason) => {
     console.log('socket disconnected', socket.id, reason);
-    // Remove from matchmaking queue
     await mm.removeBySocket(socket.id);
 
     const nickname = socket.data.nickname;
 
-    // Check rooms where this socket's nickname is player and mark opponent winner
     for (const [roomId, r] of gm.rooms.entries()) {
       if (!r) continue;
       if (r.status === 'playing' && (r.players.x === nickname || r.players.o === nickname)) {
@@ -151,7 +140,6 @@ io.on('connection', (socket) => {
         r.winner = (r.players.x === nickname) ? r.players.o : r.players.x;
         io.to(roomId).emit('game_over', { winner: r.winner, reason: 'opponent_disconnected' });
 
-        // persist
         try {
           await recordResult({ x: r.players.x, o: r.players.o, winner: r.winner, moves: r.moves });
         } catch (err) {

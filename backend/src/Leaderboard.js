@@ -17,7 +17,6 @@ async function recordResult({ x, o, winner, moves }) {
     await ensurePlayer(o);
 
     if (winner === 'draw') {
-      // increment draws for both players (if both exist)
       await conn.query('UPDATE leaderboard SET draws = draws + 1 WHERE nickname IN (?, ?)', [x, o]);
     } else if (winner === x) {
       await conn.query('UPDATE leaderboard SET wins = wins + 1 WHERE nickname = ?', [x]);

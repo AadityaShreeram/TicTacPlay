@@ -1,7 +1,6 @@
-// Server-authoritative game management
 class GameManager {
   constructor() {
-    this.rooms = new Map(); // roomId -> { board, players: { x, o }, turn, status, moves }
+    this.rooms = new Map(); 
   }
 
   createRoom(roomId, playerX, playerO) {
@@ -33,7 +32,6 @@ class GameManager {
     room.board[index] = side;
     room.moves.push({ by: playerNickname, side, index, at: Date.now() });
 
-    // toggle turn
     room.turn = room.turn === 'x' ? 'o' : 'x';
 
     const winner = this.checkWinner(room.board);
@@ -41,7 +39,6 @@ class GameManager {
       room.status = 'finished';
       room.winner = winner === 'draw' ? 'draw' : (winner === 'x' ? room.players.x : room.players.o);
     } else {
-      // check draw
       if (room.board.every(cell => cell !== null)) {
         room.status = 'finished';
         room.winner = 'draw';

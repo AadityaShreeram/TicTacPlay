@@ -1,4 +1,3 @@
-// DB connection pool (mysql2/promise)
 const mysql = require('mysql2/promise');
 const dotenv = require('dotenv');
 dotenv.config();
