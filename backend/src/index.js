@@ -28,6 +28,53 @@ function makeRoomId(aSocketId, bSocketId) {
   return `room_${Date.now()}_${Math.floor(Math.random() * 10000)}_${aSocketId}_${bSocketId}`;
 }
 
+async function handleMatchFound(match) {
+  const { a, b } = match;
+  const roomId = makeRoomId(a.socketId, b.socketId);
+
+  const sideA = Math.random() < 0.5 ? 'x' : 'o';
+  const sideB = sideA === 'x' ? 'o' : 'x';
+
+  const room = gm.createRoom(roomId, {
+    x: sideA === 'x' ? a.nickname : b.nickname,
+    o: sideA === 'o' ? a.nickname : b.nickname,
+  });
+
+  const socketA = io.sockets.sockets.get(a.socketId);
+  const socketB = io.sockets.sockets.get(b.socketId);
+
+  if (socketA) {
+    socketA.data.nickname = a.nickname;
+    socketA.join(roomId);
+    socketA.emit('matched', {
+      roomId,
+      side: sideA,
+      opponent: b.nickname,
+    });
+  }
+
+  if (socketB) {
+    socketB.data.nickname = b.nickname; 
+    socketB.join(roomId);
+    socketB.emit('matched', {
+      roomId,
+      side: sideB,
+      opponent: a.nickname,
+    });
+  }
+
+  console.log(`Match created: ${a.nickname} vs ${b.nickname} in room ${roomId}`);
+
+  setTimeout(() => {
+    io.to(roomId).emit('game_state', {
+      board: room.board,
+      turn: room.turn,
+      status: room.status
+    });
+    console.log(`[GAME_STATE] Initial state sent to room ${roomId}`);
+  }, 100);
+}
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'TicTacPlay backend is running' });
 });
@@ -55,43 +102,82 @@ app.post('/reset', async (req, res) => {
 io.on('connection', (socket) => {
   console.log('socket connected', socket.id);
 
-  socket.on('find_match', async ({ nickname }) => {
-    if (!nickname) {
-      socket.emit('error_msg', { message: 'nickname_required' });
-      return;
+  socket.on('get-session-nickname', async (callback) => {
+    try {
+      const nickname = await mm.getNicknameBySocket(socket.id);
+      callback({ nickname: nickname || null });
+    } catch (error) {
+      console.error('Error getting session nickname:', error);
+      callback({ nickname: null });
     }
+  });
 
-    socket.data.nickname = nickname;
-
-    await mm.enqueue({ socketId: socket.id, nickname });
-
-    const pair = await mm.tryMatch();
-    if (pair) {
-      const { a, b } = pair;
-      const roomId = makeRoomId(a.socketId, b.socketId);
-      const playerX = a.nickname;
-      const playerO = b.nickname;
-
-      gm.createRoom(roomId, playerX, playerO);
-
-      const sa = io.sockets.sockets.get(a.socketId);
-      const sb = io.sockets.sockets.get(b.socketId);
-
-      if (sa) {
-        sa.join(roomId);
-        sa.emit('matched', { roomId, side: 'x', opponent: playerO });
-        sa.data.nickname = playerX;
-      }
-      if (sb) {
-        sb.join(roomId);
-        sb.emit('matched', { roomId, side: 'o', opponent: playerX });
-        sb.data.nickname = playerO;
+  socket.on('check-nickname', async (nickname, callback) => {
+    try {
+      if (!nickname || nickname.trim().length === 0) {
+        return callback({ error: 'Nickname cannot be empty' });
       }
 
-      const room = gm.getRoom(roomId);
-      io.to(roomId).emit('game_state', { board: room.board, turn: room.turn, status: room.status });
-    } else {
-      socket.emit('queued');
+      if (nickname.length > 64) {
+        return callback({ error: 'Nickname too long' });
+      }
+
+      const available = await mm.isNicknameAvailable(nickname, socket.id);
+      callback({ available });
+    } catch (error) {
+      console.error('Error checking nickname:', error);
+      callback({ error: 'Error checking nickname' });
+    }
+  });
+
+  socket.on('reserve-nickname', async (nickname, callback) => {
+    try {
+      if (!nickname || nickname.trim().length === 0) {
+        return callback({ success: false, error: 'Nickname cannot be empty' });
+      }
+
+      if (nickname.length > 64) {
+        return callback({ success: false, error: 'Nickname too long' });
+      }
+
+      const reserved = await mm.reserveNickname(socket.id, nickname);
+
+      if (reserved) {
+        socket.data.nickname = reserved;
+        console.log(`[RESERVE] Set socket.data.nickname for ${socket.id} to ${reserved}`);
+
+        callback({ success: true, nickname: reserved });
+      } else {
+        callback({ success: false, error: 'Nickname already taken' });
+      }
+    } catch (error) {
+      console.error('Error reserving nickname:', error);
+      callback({ success: false, error: 'Error reserving nickname' });
+    }
+  });
+
+  socket.on('find_match', async ({ nickname }) => {
+    try {
+      const reservedNickname = await mm.getNicknameBySocket(socket.id);
+
+      if (!reservedNickname || reservedNickname.toLowerCase() !== (nickname || '').toLowerCase()) {
+        socket.emit('error_msg', { message: 'nickname_not_reserved' });
+        return;
+      }
+
+      socket.data.nickname = reservedNickname;
+      console.log(`[FIND_MATCH] Set socket.data.nickname for ${socket.id} to ${reservedNickname}`);
+
+      await mm.enqueue({ socketId: socket.id, nickname: reservedNickname });
+      console.log(`${reservedNickname} entered matchmaking queue`);
+
+      const match = await mm.tryMatch();
+      if (match) {
+        await handleMatchFound(match);
+      }
+    } catch (error) {
+      console.error('Error in find_match:', error);
+      socket.emit('error_msg', { message: 'Error finding match' });
     }
   });
 
@@ -102,16 +188,22 @@ io.on('connection', (socket) => {
 
   socket.on('move_made', async ({ roomId, index }) => {
     const nickname = socket.data.nickname;
+    console.log(`[MOVE] Socket ${socket.id} attempting move. Nickname: ${nickname}`);
+    
     if (!nickname) {
+      console.error(`[MOVE] ✗ No nickname found for socket ${socket.id}`);
       socket.emit('move_rejected', { reason: 'unknown_player' });
       return;
     }
+
     const result = gm.validateAndApplyMove(roomId, nickname, index);
     if (!result.ok) {
+      console.error(`[MOVE] ✗ Move rejected: ${result.reason}`);
       socket.emit('move_rejected', { reason: result.reason });
       return;
     }
 
+    console.log(`[MOVE] ✓ Move accepted for ${nickname} at index ${index}`);
     const room = result.room;
     io.to(roomId).emit('game_state', { board: room.board, turn: room.turn, status: room.status });
 
@@ -127,26 +219,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', async (reason) => {
-    console.log('socket disconnected', socket.id, reason);
-    await mm.removeBySocket(socket.id);
-
-    const nickname = socket.data.nickname;
-
-    for (const [roomId, r] of gm.rooms.entries()) {
-      if (!r) continue;
-      if (r.status === 'playing' && (r.players.x === nickname || r.players.o === nickname)) {
-        r.status = 'finished';
-        r.winner = (r.players.x === nickname) ? r.players.o : r.players.x;
-        io.to(roomId).emit('game_over', { winner: r.winner, reason: 'opponent_disconnected' });
-
-        try {
-          await recordResult({ x: r.players.x, o: r.players.o, winner: r.winner, moves: r.moves });
-        } catch (err) {
-          console.error('Error recording result after disconnect:', err);
-        }
-        gm.removeRoom(roomId);
-      }
+  socket.on('disconnect', async () => {
+    try {
+      await mm.removeBySocket(socket.id);
+      await mm.releaseNickname(socket.id);
+      console.log(`Socket ${socket.id} disconnected and cleaned up`);
+    } catch (error) {
+      console.error('Error on disconnect:', error);
     }
   });
 });

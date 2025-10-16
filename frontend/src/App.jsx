@@ -3,6 +3,7 @@ import io from "socket.io-client";
 import Board from "./components/Board";
 import Leaderboard from "./components/Leaderboard";
 import Matchmaking from "./components/Matchmaking";
+
 import "./App.css";
 
 const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:4000");
@@ -32,6 +33,7 @@ export default function App() {
     fetchLeaderboard();
 
     socket.on("game_state", (data) => {
+      console.log("[GAME_STATE] Received:", data);
       setGame((prev) => ({ ...prev, board: data.board, turn: data.turn, status: data.status }));
     });
 
@@ -55,10 +57,26 @@ export default function App() {
       }, 3000); 
     });
 
+    socket.on("error_msg", (data) => {
+      console.error("Error from server:", data.message);
+      if (data.message === 'nickname_not_reserved') {
+        setNickname(null);
+        setSearching(false);
+        alert('Your nickname session expired. Please enter your nickname again.');
+      }
+    });
+
+    socket.on("move_rejected", (data) => {
+      console.error("[MOVE_REJECTED]", data);
+      alert(`Move rejected: ${data.reason}`);
+    });
+
     return () => {
       socket.off("game_state");
       socket.off("game_over");
       socket.off("matched");
+      socket.off("error_msg");
+      socket.off("move_rejected");
     };
   }, []);
 
@@ -84,7 +102,23 @@ export default function App() {
   };
 
   const handleMove = (index) => {
-    if (!game || game.status !== "playing") return;
+    console.log("[HANDLE_MOVE] Clicked index:", index);
+    console.log("[HANDLE_MOVE] Game state:", game);
+    console.log("[HANDLE_MOVE] game.status:", game?.status);
+    console.log("[HANDLE_MOVE] game.turn:", game?.turn);
+    console.log("[HANDLE_MOVE] game.side:", game?.side);
+    
+    if (!game || game.status !== "playing") {
+      console.log("[HANDLE_MOVE] ✗ Game not active");
+      return;
+    }
+    
+    if (game.turn !== game.side) {
+      console.log("[HANDLE_MOVE] ✗ Not your turn");
+      return;
+    }
+    
+    console.log("[HANDLE_MOVE] ✓ Emitting move_made");
     socket.emit("move_made", { roomId: game.roomId, index });
   };
 
@@ -101,6 +135,11 @@ export default function App() {
     setGame(null);
     setWinner(null);
     setSearching(false);
+    
+    socket.disconnect();
+    setTimeout(() => {
+      socket.connect();
+    }, 100);
   };
 
   const resetLeaderboard = async () => {
@@ -118,7 +157,11 @@ export default function App() {
       <h1 className="title">TicTacPlay</h1>
 
       {!game && !searching && !transitioning && (
-        <Matchmaking socket={socket} onFindMatch={handleMatchStart} nickname={nickname} />
+        <Matchmaking 
+          socket={socket} 
+          onFindMatch={handleMatchStart} 
+          nickname={nickname} 
+        />
       )}
 
       {searching && (

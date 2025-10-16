@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS game_history (
   id INT AUTO_INCREMENT PRIMARY KEY,
   player_x VARCHAR(64),
   player_o VARCHAR(64),
-  winner VARCHAR(64), -- nickname or 'draw'
+  winner VARCHAR(64),
   moves JSON,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_nickname ON leaderboard(nickname);
