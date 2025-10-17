@@ -187,5 +187,101 @@
     padding: 10px 20px;
     font-size: 14px;
   }
-  
+  /* Add these styles to your existing App.css */
+
+.waiting-room {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 3rem;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  max-width: 500px;
+  margin: 2rem auto;
+  color: white;
+  animation: fadeIn 0.5s ease-in;
+}
+
+.waiting-room h2 {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.room-info {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2rem;
+  border-radius: 15px;
+  margin: 1.5rem 0;
+  backdrop-filter: blur(10px);
+}
+
+.room-id {
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+  word-break: break-all;
+}
+
+.room-id strong {
+  display: block;
+  font-size: 1.5rem;
+  margin-top: 0.5rem;
+  color: #ffd700;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.5rem;
+  border-radius: 8px;
+  letter-spacing: 1px;
+}
+
+.instruction {
+  font-size: 1.1rem;
+  margin: 1rem 0;
+  opacity: 0.9;
+}
+
+.waiting-text {
+  font-size: 1.2rem;
+  margin-top: 1.5rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.waiting-room .btn.outline {
+  margin-top: 1.5rem;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid white;
+  color: white;
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+.waiting-room .btn.outline:hover {
+  background: white;
+  color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(255, 255, 255, 0.3);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in;
+}
 }

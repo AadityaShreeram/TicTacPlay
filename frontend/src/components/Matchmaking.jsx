@@ -10,24 +10,20 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
   const debounceTimer = useRef(null);
 
   useEffect(() => {
-    console.log("[MOUNT] Matchmaking component mounted");
-    console.log("[MOUNT] existingName:", existingName);
+    if (!socket) return;
 
-    if (socket && !existingName) {
-      console.log("[MOUNT] Checking for session nickname...");
+    console.log("[MOUNT] Matchmaking component mounted");
+
+    if (!existingName) {
       socket.emit("get-session-nickname", (response) => {
-        console.log("[MOUNT] Session nickname response:", response);
         if (response.nickname) {
-          console.log("[MOUNT] ✓ Found session nickname:", response.nickname);
+          console.log("[SESSION] Found session nickname:", response.nickname);
           setSessionNickname(response.nickname);
           setNickname(response.nickname);
           setAvailable(true);
-        } else {
-          console.log("[MOUNT] No session nickname found");
         }
       });
-    } else if (existingName) {
-      console.log("[MOUNT] Using existingName:", existingName);
+    } else {
       setSessionNickname(existingName);
       setNickname(existingName);
       setAvailable(true);
@@ -36,10 +32,7 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
 
   const checkNickname = useCallback(
     (value) => {
-      console.log("[CHECK] Checking nickname:", value);
-
       if (!value || value.trim().length === 0) {
-        console.log("[CHECK] Empty nickname, skipping check");
         setAvailable(null);
         setError("");
         return;
@@ -47,14 +40,11 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
 
       setChecking(true);
       socket.emit("check-nickname", value.trim(), (response) => {
-        console.log("[CHECK] Response:", response);
         setChecking(false);
         if (response.error) {
-          console.log("[CHECK] Error:", response.error);
           setAvailable(false);
           setError(response.error);
         } else {
-          console.log("[CHECK] Available:", response.available);
           setAvailable(response.available);
           setError("");
         }
@@ -65,13 +55,9 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
 
   const handleNicknameChange = (e) => {
     const value = e.target.value;
-    console.log("[INPUT] Nickname changed to:", value);
-    console.log("[INPUT] Session nickname:", sessionNickname);
-
     setNickname(value);
 
     if (sessionNickname && value.toLowerCase() === sessionNickname.toLowerCase()) {
-      console.log("[INPUT] ✓ Matches session nickname — marking as available");
       setAvailable(true);
       setError("");
       return;
@@ -81,18 +67,11 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
     setError("");
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      checkNickname(value);
-    }, 300);
+    debounceTimer.current = setTimeout(() => checkNickname(value), 300);
   };
 
   const joinMatch = () => {
     const name = nickname.trim();
-    console.log("[JOIN] Attempting to join match");
-    console.log("[JOIN] Nickname:", name);
-    console.log("[JOIN] Session nickname:", sessionNickname);
-    console.log("[JOIN] Available:", available);
-    console.log("[JOIN] Checking:", checking);
 
     if (!name) {
       setError("Enter nickname!");
@@ -100,41 +79,95 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
     }
 
     if (checking) {
-      console.log("[JOIN] ✗ Still checking nickname...");
       setError("Please wait for nickname validation");
       return;
     }
 
     if (!available) {
-      console.log("[JOIN] ✗ Nickname not available");
       setError("Nickname not available");
       return;
     }
 
     if (!sessionNickname || name.toLowerCase() !== sessionNickname.toLowerCase()) {
-      console.log("[JOIN] Reserving new nickname:", name);
       socket.emit("reserve-nickname", name, (response) => {
-        console.log("[JOIN] Reserve response:", response);
         if (response.success) {
-          console.log("[JOIN] ✓ Nickname reserved — finding match...");
           setSessionNickname(response.nickname);
           onFindMatch(response.nickname);
         } else {
-          console.log("[JOIN] ✗ Failed to reserve:", response.error);
           setError(response.error || "Failed to reserve nickname");
           setAvailable(false);
         }
       });
     } else {
-      console.log("[JOIN] ✓ Using existing session nickname — finding match...");
       onFindMatch(name);
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && available && !checking) {
-      joinMatch();
+  const handleCreateRoom = () => {
+    const name = nickname.trim();
+    if (!name) {
+      setError("Enter nickname to create room!");
+      return;
     }
+
+    if (checking) {
+      setError("Please wait for nickname validation");
+      return;
+    }
+
+    if (!available) {
+      setError("Nickname not available");
+      return;
+    }
+
+    socket.emit("reserve-nickname", name, (res) => {
+      if (!res.success) {
+        setError(res.error || "Failed to reserve nickname");
+        return;
+      }
+
+      socket.emit("create_room", { nickname: name }, (res2) => {
+        if (res2.error) {
+          setError(res2.error);
+          return;
+        }
+
+        setSessionNickname(name);
+        console.log(`[ROOM] Created room: ${res2.roomId}`);
+        // Room created event will be handled in App.jsx
+      });
+    });
+  };
+
+  const handleJoinRoom = () => {
+    const id = prompt("Enter room ID to join:");
+    if (!id) return;
+
+    const name = nickname.trim();
+    if (!name) {
+      setError("Enter nickname to join room!");
+      return;
+    }
+
+    socket.emit("reserve-nickname", name, (res) => {
+      if (!res.success) {
+        setError(res.error || "Failed to reserve nickname");
+        return;
+      }
+
+      socket.emit("join_room", { nickname: name, roomId: id }, (res2) => {
+        if (res2.error) {
+          alert(res2.error);
+        } else {
+          setSessionNickname(name);
+          console.log(`[ROOM] Joined room: ${id}`);
+        }
+      });
+    });
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && available && !checking) joinMatch();
   };
 
   return (
@@ -163,9 +196,8 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
       )}
 
       {available === false && !checking && nickname && (
-  <p className="error-message">Choose a unique nickname</p>
-)}
-
+        <p className="error-message">Choose a unique nickname</p>
+      )}
 
       <button
         className="matchmaking-button"
@@ -174,6 +206,22 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
       >
         Find Match
       </button>
+
+      <div className="room-buttons">
+        <button 
+          className="matchmaking-button outline" 
+          onClick={handleCreateRoom}
+          disabled={!available || checking || !nickname.trim()}
+        >
+          Create Room
+        </button>
+        <button 
+          className="matchmaking-button outline" 
+          onClick={handleJoinRoom}
+        >
+          Join Room
+        </button>
+      </div>
     </div>
   );
 }

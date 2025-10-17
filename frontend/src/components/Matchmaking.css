@@ -1,5 +1,6 @@
 .matchmaking-container {
   margin-top: 2rem;
+  text-align: center;
 }
 
 .matchmaking-input {
@@ -10,6 +11,9 @@
   margin-right: 10px;
   background-color: #222;
   color: #fff300;
+  width: 60%;
+  max-width: 250px;
+  display: inline-block;
 }
 
 .matchmaking-input::placeholder {
@@ -22,7 +26,7 @@
 }
 
 .matchmaking-button {
-  padding: 8px 16px;
+  padding: 10px 20px;
   background-color: #fff300;
   color: #000;
   border: none;
@@ -30,9 +34,48 @@
   cursor: pointer;
   font-weight: bold;
   transition: all 0.3s ease;
+  margin: 5px;
+  min-width: 120px;
 }
 
 .matchmaking-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(255, 243, 0, 0.3);
+}
+
+.room-buttons {
+  margin-top: 15px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.matchmaking-button.outline {
+  background: transparent;
+  border: 2px solid #555;
+  color: #fff;
+}
+
+.matchmaking-button.outline:hover {
+  background: #555;
+  color: #fff;
+}
+
+@media (max-width: 480px) {
+  .matchmaking-input {
+    width: 80%;
+    margin-bottom: 10px;
+  }
+
+  .room-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .matchmaking-button {
+    width: 80%;
+    max-width: 200px;
+    margin: 0 auto;
+  }
 }
