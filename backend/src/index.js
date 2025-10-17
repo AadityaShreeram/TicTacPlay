@@ -11,11 +11,32 @@ const GameManager = require("./GameManager");
 const { recordResult, getLeaderboard, resetLeaderboard } = require("./Leaderboard");
 
 const app = express();
-app.use(cors());
+
+const corsOptions = {
+  origin: "http://localhost:5173",
+  methods: ["GET", "POST", "OPTIONS"],
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
+  },
+  transports: ["polling", "websocket"],
+  allowEIO3: true,
+  pingTimeout: 30000,
+  pingInterval: 10000
+});
 
 const PORT = process.env.PORT || 4000;
 
@@ -25,7 +46,16 @@ const mm = new Matchmaking();
 const activeRoomCodes = new Set();
 const playAgainRequests = new Map();
 
-/** Generate a unique 4–6 digit room code */
+async function broadcastLeaderboard() {
+  try {
+    const leaderboard = await getLeaderboard(50);
+    console.log(`[LEADERBOARD] Broadcasting to all clients (${leaderboard.length} entries)`);
+    io.emit("leaderboard_update", leaderboard);
+  } catch (err) {
+    console.error("[LEADERBOARD] Error broadcasting:", err);
+  }
+}
+
 function generateRoomCode(length = 6) {
   const min = Math.pow(10, length - 1);
   const max = Math.pow(10, length) - 1;
@@ -75,7 +105,7 @@ async function handleMatchFound(match) {
     x: sideA === "x" ? a.nickname : b.nickname,
     o: sideA === "o" ? a.nickname : b.nickname,
   });
-
+  room.startTime = Date.now(); 
   socketA.emit("matched", { roomId, side: sideA, opponent: b.nickname });
   socketB.emit("matched", { roomId, side: sideB, opponent: a.nickname });
 
@@ -88,9 +118,13 @@ async function handleMatchFound(match) {
   }, 50);
 }
 
-/* ================= REST ROUTES ================= */
-app.get("/health", (req, res) => res.json({ status: "ok", message: "TicTacPlay backend running" }));
+app.get("/health", (req, res) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.json({ status: "ok", message: "TicTacPlay backend running" });
+});
+
 app.get("/leaderboard", async (req, res) => {
+  res.header("Access-Control-Allow-Credentials", "true");
   try {
     res.json(await getLeaderboard(50));
   } catch (err) {
@@ -98,9 +132,12 @@ app.get("/leaderboard", async (req, res) => {
     res.status(500).json({ error: "db_error" });
   }
 });
+
 app.post("/reset", async (req, res) => {
+  res.header("Access-Control-Allow-Credentials", "true");
   try {
     await resetLeaderboard();
+    await broadcastLeaderboard(); 
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -108,9 +145,14 @@ app.post("/reset", async (req, res) => {
   }
 });
 
-/* ================= SOCKET HANDLERS ================= */
 io.on("connection", (socket) => {
-  console.log("[CONNECTED]", socket.id);
+  console.log("[CONNECTED]", socket.id, "Transport:", socket.conn.transport.name);
+
+  getLeaderboard(50).then(leaderboard => {
+    socket.emit("leaderboard_update", leaderboard);
+  }).catch(err => {
+    console.error("[LEADERBOARD] Error sending to new client:", err);
+  });
 
   socket.on("get-session-nickname", async (callback) => {
     try {
@@ -149,7 +191,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  /* ---------- AUTO MATCHMAKING ---------- */
   socket.on("find_match", async ({ nickname }) => {
     try {
       const reservedNickname = await mm.getNicknameBySocket(socket.id);
@@ -174,7 +215,6 @@ io.on("connection", (socket) => {
     socket.emit("search_cancelled");
   });
 
-  /* ---------- CUSTOM ROOM: CREATE ---------- */
   socket.on("create_room", async ({ nickname }, callback) => {
     console.log(`[CREATE_ROOM] request from ${nickname}`);
     await mm.removeBySocket(socket.id);
@@ -195,7 +235,6 @@ io.on("connection", (socket) => {
     callback({ success: true, roomId });
   });
 
-  /* ---------- CUSTOM ROOM: JOIN ---------- */
   socket.on("join_room", async ({ nickname, roomId }, callback) => {
     if (!nickname || !roomId) return callback({ error: "Missing fields" });
 
@@ -206,6 +245,7 @@ io.on("connection", (socket) => {
 
     room.players.o = nickname;
     room.status = "playing";
+    room.startTime = Date.now(); 
 
     const host = room.players.x;
     const socketHost = [...io.sockets.sockets.values()].find(
@@ -230,7 +270,6 @@ io.on("connection", (socket) => {
     callback({ success: true });
   });
 
-  /* ---------- REQUEST GAME STATE ---------- */
   socket.on("request_game_state", ({ roomId }) => {
     const room = gm.getRoom(roomId);
     if (room)
@@ -241,7 +280,6 @@ io.on("connection", (socket) => {
       });
   });
 
-  /* ---------- MOVE MADE ---------- */
   socket.on("move_made", async ({ roomId, index }) => {
     const nickname = socket.data.nickname;
     if (!nickname || !socket.rooms.has(roomId)) {
@@ -260,129 +298,183 @@ io.on("connection", (socket) => {
     });
 
     if (room.status === "finished") {
-  try {
-    await recordResult({
-      x: room.players.x,
-      o: room.players.o,
-      winner: room.winner,
-      moves: room.moves,
-    });
-  } catch (err) {
-    console.error("Error recording result:", err);
-  }
+      console.log("[GAME_OVER] Attempting to record result for room:", roomId, "Winner:", room.winner, "Duration:", room.duration, "Players:", room.players, "Moves:", room.moves);
+      try {
+        if (!room.players.x || !room.players.o) {
+          console.warn("[GAME_OVER] Missing players:", room.players);
+          return;
+        }
+        if (typeof room.duration !== "number" || room.duration < 0) {
+          console.warn("[GAME_OVER] Invalid duration:", room.duration, "Defaulting to 0");
+          room.duration = 0;
+        }
+        await recordResult({
+          x: room.players.x,
+          o: room.players.o,
+          winner: room.winner || "draw",
+          moves: room.moves || [],
+          duration: room.duration,
+        });
+        console.log("[GAME_OVER] Result recorded successfully for room:", roomId);
+        await broadcastLeaderboard();
+      } catch (err) {
+        console.error("[GAME_OVER] Error recording result:", err);
+      }
 
-  io.to(roomId).emit("game_over", { winner: room.winner });
+      io.to(roomId).emit("game_over", { winner: room.winner });
 
-  // ✅ Delay cleanup only if both players have disconnected
-  const checkCleanup = async () => {
-    const sockets = [...io.sockets.sockets.values()];
-    const playerSockets = sockets.filter(
-      (s) =>
-        s.data.roomId === roomId &&
-        [room.players.x, room.players.o].includes(s.data.nickname)
-    );
+      const checkCleanup = async () => {
+        const sockets = [...io.sockets.sockets.values()];
+        const playerSockets = sockets.filter(
+          (s) =>
+            s.data.roomId === roomId &&
+            [room.players.x, room.players.o].includes(s.data.nickname)
+        );
 
-    if (playerSockets.length === 0) {
-      gm.removeRoom(roomId);
-      releaseRoomCode(roomId);
-      playAgainRequests.delete(roomId);
-      console.log(`[CLEANUP] Room ${roomId} removed after both players left`);
-    } else {
-      console.log(
-        `[CLEANUP CHECK] Room ${roomId} still has ${playerSockets.length} player(s) connected`
-      );
-      setTimeout(checkCleanup, 60_000);
+        if (playerSockets.length === 0) {
+          gm.removeRoom(roomId);
+          releaseRoomCode(roomId);
+          playAgainRequests.delete(roomId);
+          console.log(`[CLEANUP] Room ${roomId} removed after both players left`);
+        } else {
+          console.log(
+            `[CLEANUP CHECK] Room ${roomId} still has ${playerSockets.length} player(s) connected`
+          );
+          setTimeout(checkCleanup, 60_000);
+        }
+      };
+
+      setTimeout(checkCleanup, 100);
     }
-  };
-
-  setTimeout(checkCleanup, 60_000);
-}
-
   });
 
-socket.on("play_again", async ({ roomId }) => {
-  const nickname = socket.data.nickname;
-  if (!roomId || !nickname) return;
+  socket.on("play_again", async ({ roomId }) => {
+    const nickname = socket.data.nickname;
+    if (!roomId || !nickname) return;
 
-  const room = gm.getRoom(roomId);
-  if (!room) {
-    socket.emit("error_msg", { message: "room_not_found" });
-    return;
-  }
-
-  if (!playAgainRequests.has(roomId)) playAgainRequests.set(roomId, new Set());
-  const requestSet = playAgainRequests.get(roomId);
-
-  requestSet.add(nickname);
-  console.log(`[PLAY_AGAIN] ${nickname} requested rematch in ${roomId}`);
-
-  const opponent =
-    room.players.x === nickname ? room.players.o : room.players.x;
-
-  if (!opponent) {
-    socket.emit("error_msg", { message: "opponent_not_found" });
-    return;
-  }
-
-  const opponentSocket = [...io.sockets.sockets.values()].find(
-    (s) => s.data.nickname === opponent
-  );
-
-  if (opponentSocket) {
-    opponentSocket.emit("play_again_request", { from: nickname, roomId });
-  } else {
-    socket.emit("error_msg", { message: "opponent_disconnected" });
-    return;
-  }
-
-  if (
-    requestSet.has(room.players.x) &&
-    requestSet.has(room.players.o)
-  ) {
-    console.log(`[PLAY_AGAIN] Both players ready → restarting ${roomId}`);
-
-    gm.resetRoom(roomId);
-    const newRoom = gm.getRoom(roomId);
-    playAgainRequests.delete(roomId);
-
-    const sideA = Math.random() < 0.5 ? "x" : "o";
-    const sideB = sideA === "x" ? "o" : "x";
-
-    const socketA = [...io.sockets.sockets.values()].find(
-      (s) => s.data.nickname === room.players.x
-    );
-    const socketB = [...io.sockets.sockets.values()].find(
-      (s) => s.data.nickname === room.players.o
-    );
-
-    if (!socketA || !socketB) {
-      console.warn(`[PLAY_AGAIN] Missing sockets for rematch ${roomId}`);
+    const room = gm.getRoom(roomId);
+    if (!room) {
+      socket.emit("error_msg", { message: "room_not_found" });
       return;
     }
 
-    socketA.emit("matched", {
-      roomId,
-      side: sideA,
-      opponent: room.players.o,
-    });
-    socketB.emit("matched", {
-      roomId,
-      side: sideB,
-      opponent: room.players.x,
-    });
+    if (!playAgainRequests.has(roomId)) playAgainRequests.set(roomId, new Set());
+    const requestSet = playAgainRequests.get(roomId);
 
-    setTimeout(() => {
-      io.to(roomId).emit("game_state", {
-        board: newRoom.board,
-        turn: newRoom.turn,
-        status: newRoom.status,
+    requestSet.add(nickname);
+    console.log(`[PLAY_AGAIN] ${nickname} requested rematch in ${roomId}`);
+
+    const opponent = room.players.x === nickname ? room.players.o : room.players.x;
+    if (!opponent) {
+      socket.emit("error_msg", { message: "opponent_not_found" });
+      return;
+    }
+
+    const opponentSocket = [...io.sockets.sockets.values()].find(
+      (s) => s.data.nickname === opponent
+    );
+
+    if (opponentSocket) {
+      opponentSocket.emit("play_again_request", { from: nickname, roomId });
+    } else {
+      socket.emit("error_msg", { message: "opponent_disconnected" });
+      return;
+    }
+
+    if (requestSet.has(room.players.x) && requestSet.has(room.players.o)) {
+      console.log(`[PLAY_AGAIN] Both players ready → restarting ${roomId}`);
+
+      gm.resetRoom(roomId);
+      const newRoom = gm.getRoom(roomId);
+      playAgainRequests.delete(roomId);
+
+      const sideA = Math.random() < 0.5 ? "x" : "o";
+      const sideB = sideA === "x" ? "o" : "x";
+
+      const socketA = [...io.sockets.sockets.values()].find(
+        (s) => s.data.nickname === room.players.x
+      );
+      const socketB = [...io.sockets.sockets.values()].find(
+        (s) => s.data.nickname === room.players.o
+      );
+
+      if (!socketA || !socketB) {
+        console.warn(`[PLAY_AGAIN] Missing sockets for rematch ${roomId}`);
+        return;
+      }
+
+      socketA.emit("matched", {
+        roomId,
+        side: sideA,
+        opponent: room.players.o,
       });
-    }, 50);
-  } else {
-    socket.emit("waiting_for_opponent", { opponent });
-  }
-});
+      socketB.emit("matched", {
+        roomId,
+        side: sideB,
+        opponent: room.players.x,
+      });
 
+      setTimeout(() => {
+        io.to(roomId).emit("game_state", {
+          board: newRoom.board,
+          turn: newRoom.turn,
+          status: newRoom.status,
+        });
+      }, 50);
+    } else {
+      socket.emit("waiting_for_opponent", { opponent });
+    }
+  });
+
+  socket.on("leave_game", async ({ roomId, nickname }) => {
+    console.log(`[LEAVE_GAME] ${nickname} leaving room ${roomId}`);
+    if (!roomId || !socket.rooms.has(roomId)) return;
+
+    const room = gm.getRoom(roomId);
+    if (!room || room.status !== "playing") return;
+
+    const opponent = room.players.x === nickname ? room.players.o : room.players.x;
+    socket.leave(roomId);
+    socket.data.roomId = null;
+
+    const opponentSocket = [...io.sockets.sockets.values()].find(
+      (s) => s.data.nickname === opponent && s.rooms.has(roomId)
+    );
+
+    if (opponentSocket) {
+      opponentSocket.emit("game_over", { winner: opponent });
+      opponentSocket.leave(roomId);
+      opponentSocket.data.roomId = null;
+    }
+    room.endTime = Date.now();
+    room.duration = room.startTime ? (room.endTime - room.startTime) / 1000 : 0;
+    room.status = "finished";
+    room.winner = opponent || "draw";
+
+    console.log("[LEAVE_GAME] Attempting to record result for room:", roomId, "Winner:", room.winner, "Duration:", room.duration, "Players:", room.players, "Moves:", room.moves);
+    try {
+      if (!room.players.x || !room.players.o) {
+        console.warn("[LEAVE_GAME] Missing players:", room.players);
+        return;
+      }
+      await recordResult({
+        x: room.players.x,
+        o: room.players.o,
+        winner: room.winner,
+        moves: room.moves || [],
+        duration: room.duration,
+      });
+      console.log("[LEAVE_RESULT] Recorded successfully for room:", roomId);
+      await broadcastLeaderboard();
+    } catch (err) {
+      console.error("[LEAVE_GAME] Error recording result:", err);
+    }
+
+    gm.removeRoom(roomId);
+    releaseRoomCode(roomId);
+    playAgainRequests.delete(roomId);
+    console.log(`[CLEANUP] Room ${roomId} removed after leave`);
+  });
 
   socket.on("disconnect", async () => {
     try {
@@ -412,6 +504,7 @@ socket.on("play_again", async ({ roomId }) => {
   });
 });
 
-server.listen(PORT, () =>
-  console.log(`TicTacPlay backend running on port ${PORT}`)
-);
+server.listen(PORT, () => {
+  console.log(`TicTacPlay backend running on port ${PORT}`);
+  console.log("WebSocket server listening on ws://localhost:4000");
+});

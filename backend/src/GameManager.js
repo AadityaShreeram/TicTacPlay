@@ -11,6 +11,9 @@ class GameManager {
       status: "playing",
       moves: [],
       winner: null,
+      startTime: null,
+      endTime: null,
+      duration: null,
     };
     this.rooms.set(roomId, initial);
     console.log(`[ROOM_CREATED] ${roomId}`);
@@ -30,6 +33,9 @@ class GameManager {
     room.status = "playing";
     room.moves = [];
     room.winner = null;
+    room.startTime = null;
+    room.endTime = null;
+    room.duration = null;
 
     this.rooms.set(roomId, room);
     console.log(`[ROOM_RESET] ${roomId} - board cleared, game restarted`);
@@ -39,7 +45,9 @@ class GameManager {
   validateAndApplyMove(roomId, playerNickname, index) {
     const room = this.rooms.get(roomId);
     if (!room || room.status !== "playing") return { ok: false, reason: "invalid_room_or_finished" };
-
+    if (!room.startTime) {
+      room.startTime = Date.now();
+    }
     const side =
       room.players.x === playerNickname
         ? "x"
@@ -61,9 +69,13 @@ class GameManager {
       room.status = "finished";
       room.winner =
         winner === "draw" ? "draw" : winner === "x" ? room.players.x : room.players.o;
+      room.endTime = Date.now();
+      room.duration = (room.endTime - room.startTime) / 1000;
     } else if (room.board.every(Boolean)) {
       room.status = "finished";
       room.winner = "draw";
+      room.endTime = Date.now();
+      room.duration = (room.endTime - room.startTime) / 1000;
     }
 
     return { ok: true, room };

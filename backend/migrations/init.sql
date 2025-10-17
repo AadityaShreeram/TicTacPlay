@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS leaderboard (
   wins INT DEFAULT 0,
   losses INT DEFAULT 0,
   draws INT DEFAULT 0,
+  total_time_seconds INT DEFAULT 0,
+  fastest_win FLOAT DEFAULT NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
@@ -16,6 +18,7 @@ CREATE TABLE IF NOT EXISTS game_history (
   player_o VARCHAR(64),
   winner VARCHAR(64),
   moves JSON,
+  duration_seconds FLOAT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

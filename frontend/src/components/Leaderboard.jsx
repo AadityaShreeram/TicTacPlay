@@ -1,30 +1,37 @@
 import React from "react";
 
-export default function Leaderboard({ leaderboard, onReset }) {
+export default function Leaderboard({ leaderboard, currentNickname }) {
+  const leaderboardData = Array.isArray(leaderboard) ? leaderboard : [];
+
   return (
     <div className="leaderboard">
       <div className="leaderboard-header">
         <h2>Leaderboard</h2>
-        <button className="btn small" onClick={onReset}>Reset</button>
       </div>
       <table className="leaderboard-table">
         <thead>
           <tr>
+            <th>Rank</th>
             <th>Nickname</th>
             <th>Wins</th>
-            <th>Losses</th>
-            <th>Draws</th>
+            <th>Score</th>
           </tr>
         </thead>
         <tbody>
-          {leaderboard.map((p, i) => (
-            <tr key={i}>
-              <td>{p.nickname}</td>
-              <td>{p.wins}</td>
-              <td>{p.losses}</td>
-              <td>{p.draws}</td>
+          {leaderboardData.length > 0 ? (
+            leaderboardData.map((p, i) => (
+              <tr key={i} className={p.nickname.includes("(you)") ? "current-user" : ""}>
+                <td>{i + 1}</td>
+                <td>{p.nickname}</td>
+                <td>{p.wins}</td>
+                <td>{p.score}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="4">No data available</td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
     </div>
