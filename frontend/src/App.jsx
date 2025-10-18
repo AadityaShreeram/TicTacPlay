@@ -22,6 +22,7 @@ export default function App() {
   const [waitingRoom, setWaitingRoom] = useState(null);
   const [waitingForRematch, setWaitingForRematch] = useState(false);
   const [gameEnded, setGameEnded] = useState(false);
+  const [isCustomRoom, setIsCustomRoom] = useState(false);
 
   const [elapsed, setElapsed] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
@@ -91,12 +92,17 @@ export default function App() {
 
     socket.on("matched", (data) => {
       console.log("[MATCHED] Event received:", data);
-      const isCustomRoom = /^\d{4,6}$/.test(data.roomId);
+      const isCustom = /^\d{4,6}$/.test(data.roomId);
+      setIsCustomRoom(isCustom);
       setWaitingRoom(null);
-      if (isCustomRoom) {
+      setWaitingForRematch(false);
+      setGameEnded(false); // Reset gameEnded immediately when matched
+      
+      if (isCustom) {
         handleMatched(data);
         return;
       }
+      
       setMatchData(data);
       setSearching(false);
       setTransitioning(true);
@@ -107,12 +113,24 @@ export default function App() {
       }, 3000);
     });
 
+    socket.on("searching_again", () => {
+      console.log("[SEARCHING_AGAIN] Finding new opponent...");
+      setSearching(true);
+      setGame(null);
+      setWinner(null);
+      setGameEnded(false);
+      setWaitingForRematch(false);
+    });
+
     socket.on("error_msg", (data) => {
       console.error("[ERROR] From server:", data.message);
       if (data.message === "nickname_not_reserved") {
-        setNickname(null);
+        alert("Your nickname session expired. Please try again.");
+      } else if (data.message === "opponent_disconnected") {
+        alert("Your opponent has disconnected. Try finding a new match!");
+        setGame(null);
         setSearching(false);
-        alert("Your nickname session expired. Please enter your nickname again.");
+        setWaitingForRematch(false);
       }
     });
 
@@ -138,11 +156,11 @@ export default function App() {
       alert("Opponent left or cancelled the rematch request.");
     });
 
-    socket.on("player_left", (data) => {
-      console.log("[PLAYER_LEFT] Received:", data);
-      alert(`${data.opponent} has left the game.`);
-      setGame(null);
-      setWinner(nickname);
+    socket.on("opponent_left", (data) => {
+      console.log("[OPPONENT_LEFT] Received:", data);
+      alert(`Your opponent has left the game. You win!`);
+      setGame((prev) => (prev ? { ...prev, status: "finished" } : null));
+      setWinner(data.winner);
       setTimerActive(false);
       setGameEnded(true);
     });
@@ -153,14 +171,15 @@ export default function App() {
       socket.off("game_state");
       socket.off("game_over");
       socket.off("matched");
+      socket.off("searching_again");
       socket.off("error_msg");
       socket.off("move_rejected");
       socket.off("play_again_request");
       socket.off("waiting_for_opponent");
       socket.off("play_again_cancelled");
-      socket.off("player_left");
+      socket.off("opponent_left");
     };
-  }, [nickname, gameEnded]);
+  }, [gameEnded]);
 
   const handleMatched = ({ roomId, side, opponent }) => {
     console.log("[HANDLE_MATCHED] Starting new match:", { roomId, side, opponent });
@@ -178,6 +197,7 @@ export default function App() {
     setWaitingForRematch(false);
     setTimerActive(true);
     setGameEnded(false);
+    setElapsed(0);
   };
 
   const handleMatchStart = (name) => {
@@ -194,11 +214,35 @@ export default function App() {
   };
 
   const handlePlayAgain = () => {
-    if (!game?.roomId || gameEnded) return;
-    socket.emit("play_again", { roomId: game.roomId });
+    if (!game?.roomId && !isCustomRoom) {
+      // For normal matches without valid room, just enter matchmaking
+      console.log("[PLAY_AGAIN] No valid room, entering matchmaking directly");
+      setSearching(true);
+      setGameEnded(false);
+      setWinner(null);
+      socket.emit("play_again", { roomId: null, isCustomRoom: false });
+      return;
+    }
+    
+    console.log("[PLAY_AGAIN] Requesting rematch. Custom room:", isCustomRoom);
+    
+    if (!isCustomRoom) {
+      // For normal matches, immediately show searching state
+      setSearching(true);
+      setGameEnded(false);
+      setWinner(null);
+    }
+    
+    socket.emit("play_again", { roomId: game?.roomId, isCustomRoom });
   };
 
   const handleNewPlayer = () => {
+    // Clean up current game state
+    if (game?.roomId) {
+      socket.emit("leave_room", { roomId: game.roomId });
+    }
+    
+    // Reset all state
     setNickname(null);
     setGame(null);
     setWinner(null);
@@ -208,13 +252,18 @@ export default function App() {
     setTimerActive(false);
     setElapsed(0);
     setGameEnded(false);
+    setIsCustomRoom(false);
+    
+    // Disconnect and reconnect socket
     socket.disconnect();
     setTimeout(() => socket.connect(), 100);
   };
 
   const handleCancelWaitingRoom = () => {
+    if (waitingRoom?.roomId) {
+      socket.emit("leave_room", { roomId: waitingRoom.roomId });
+    }
     setWaitingRoom(null);
-    setNickname(null);
   };
 
   const handleLeaveGame = () => {
@@ -224,6 +273,18 @@ export default function App() {
     setWinner("You Left");
     setTimerActive(false);
     setGameEnded(true);
+  };
+
+  const handleLeaveRoom = () => {
+    if (!game?.roomId) return;
+    console.log("[LEAVE_ROOM] Leaving room:", game.roomId);
+    socket.emit("leave_room", { roomId: game.roomId });
+    setGame(null);
+    setWinner(null);
+    setTimerActive(false);
+    setGameEnded(false);
+    setIsCustomRoom(false);
+    setWaitingForRematch(false);
   };
 
   const isMyTurn = game && game.turn === game.side && !gameEnded;
@@ -281,9 +342,16 @@ export default function App() {
         <div className="game-card fade-in">
           <Board board={game.board || Array(9).fill(null)} onClick={handleMove} turn={game.turn} />
           {game.status === "playing" && !gameEnded && (
-            <button className="btn leave-btn" onClick={handleLeaveGame}>
-              Leave Game
-            </button>
+            <div className="btn-group">
+              <button className="btn leave-btn" onClick={handleLeaveGame}>
+                Leave Game
+              </button>
+              {isCustomRoom && (
+                <button className="btn outline" onClick={handleLeaveRoom}>
+                  Leave Room
+                </button>
+              )}
+            </div>
           )}
           {game.status === "finished" && (
             <div className="result">
@@ -292,10 +360,15 @@ export default function App() {
                 <button
                   className="btn"
                   onClick={handlePlayAgain}
-                  disabled={waitingForRematch || gameEnded}
+                  disabled={waitingForRematch}
                 >
                   {waitingForRematch ? "Waiting for opponent..." : "Play Again"}
                 </button>
+                {isCustomRoom && (
+                  <button className="btn outline" onClick={handleLeaveRoom}>
+                    Leave Room
+                  </button>
+                )}
                 <button className="btn outline" onClick={handleNewPlayer}>
                   New Player
                 </button>

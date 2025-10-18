@@ -80,10 +80,11 @@
 }
 
 .waiting-room {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #222 0%, #222 100%);
   padding: 2rem;
   border-radius: 15px;
-  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 243, 0, 0.3);
   text-align: center;
   max-width: 400px;
   margin: 2rem auto;
@@ -94,31 +95,32 @@
 .waiting-room h2 {
   font-size: 1.8rem;
   margin-bottom: 1rem;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+  color: #fff300;
+  text-shadow: 2px 2px 8px rgba(255, 243, 0, 0.3);
 }
 
 .waiting-room p {
   font-size: 1rem;
   margin: 0.5rem 0;
+  color: #e0e0e0;
 }
 
 .waiting-room .btn.outline {
   margin-top: 1rem;
-  background: rgba(255, 255, 255, 0.2);
-  border: 2px solid white;
-  color: white;
+  background: transparent;
+  border: 2px solid #fff300;
+  color: #fff300;
   padding: 0.5rem 1.5rem;
   font-size: 1rem;
   transition: all 0.3s ease;
 }
 
 .waiting-room .btn.outline:hover {
-  background: white;
-  color: #667eea;
+  background: #fff300;
+  color: #1a0f2e;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 5px 15px rgba(255, 243, 0, 0.4);
 }
-
 .versus-screen {
   max-width: 400px;
   margin: 2rem auto;

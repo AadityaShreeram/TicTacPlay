@@ -82,6 +82,10 @@ function makeRoomId(aSocketId, bSocketId) {
   return `room_${Date.now()}_${Math.floor(Math.random() * 10000)}_${aSocketId}_${bSocketId}`;
 }
 
+function isCustomRoom(roomId) {
+  return /^\d{4,6}$/.test(roomId);
+}
+
 async function handleMatchFound(match) {
   const { a, b } = match;
   const roomId = makeRoomId(a.socketId, b.socketId);
@@ -348,81 +352,180 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("play_again", async ({ roomId }) => {
+  socket.on("play_again", async ({ roomId, isCustomRoom: clientIsCustom }) => {
     const nickname = socket.data.nickname;
-    if (!roomId || !nickname) return;
+    if (!nickname) return;
 
-    const room = gm.getRoom(roomId);
-    if (!room) {
-      socket.emit("error_msg", { message: "room_not_found" });
-      return;
-    }
+    const isCustom = clientIsCustom || (roomId && isCustomRoom(roomId));
 
-    if (!playAgainRequests.has(roomId)) playAgainRequests.set(roomId, new Set());
-    const requestSet = playAgainRequests.get(roomId);
+    if (isCustom) {
+      // Custom room: need to verify room exists and wait for both players
+      const room = gm.getRoom(roomId);
+      if (!room) {
+        socket.emit("error_msg", { message: "room_not_found" });
+        return;
+      }
+      // Custom room: wait for both players to agree, then rematch
+      if (!playAgainRequests.has(roomId)) playAgainRequests.set(roomId, new Set());
+      const requestSet = playAgainRequests.get(roomId);
 
-    requestSet.add(nickname);
-    console.log(`[PLAY_AGAIN] ${nickname} requested rematch in ${roomId}`);
+      requestSet.add(nickname);
+      console.log(`[PLAY_AGAIN] ${nickname} requested rematch in custom room ${roomId}`);
 
-    const opponent = room.players.x === nickname ? room.players.o : room.players.x;
-    if (!opponent) {
-      socket.emit("error_msg", { message: "opponent_not_found" });
-      return;
-    }
-
-    const opponentSocket = [...io.sockets.sockets.values()].find(
-      (s) => s.data.nickname === opponent
-    );
-
-    if (opponentSocket) {
-      opponentSocket.emit("play_again_request", { from: nickname, roomId });
-    } else {
-      socket.emit("error_msg", { message: "opponent_disconnected" });
-      return;
-    }
-
-    if (requestSet.has(room.players.x) && requestSet.has(room.players.o)) {
-      console.log(`[PLAY_AGAIN] Both players ready → restarting ${roomId}`);
-
-      gm.resetRoom(roomId);
-      const newRoom = gm.getRoom(roomId);
-      playAgainRequests.delete(roomId);
-
-      const sideA = Math.random() < 0.5 ? "x" : "o";
-      const sideB = sideA === "x" ? "o" : "x";
-
-      const socketA = [...io.sockets.sockets.values()].find(
-        (s) => s.data.nickname === room.players.x
-      );
-      const socketB = [...io.sockets.sockets.values()].find(
-        (s) => s.data.nickname === room.players.o
-      );
-
-      if (!socketA || !socketB) {
-        console.warn(`[PLAY_AGAIN] Missing sockets for rematch ${roomId}`);
+      const opponent = room.players.x === nickname ? room.players.o : room.players.x;
+      if (!opponent) {
+        socket.emit("error_msg", { message: "opponent_not_found" });
         return;
       }
 
-      socketA.emit("matched", {
-        roomId,
-        side: sideA,
-        opponent: room.players.o,
-      });
-      socketB.emit("matched", {
-        roomId,
-        side: sideB,
-        opponent: room.players.x,
-      });
+      const opponentSocket = [...io.sockets.sockets.values()].find(
+        (s) => s.data.nickname === opponent
+      );
 
-      setTimeout(() => {
-        io.to(roomId).emit("game_state", {
-          board: newRoom.board,
-          turn: newRoom.turn,
-          status: newRoom.status,
+      if (opponentSocket) {
+        opponentSocket.emit("play_again_request", { from: nickname, roomId });
+      } else {
+        socket.emit("error_msg", { message: "opponent_disconnected" });
+        return;
+      }
+
+      if (requestSet.has(room.players.x) && requestSet.has(room.players.o)) {
+        console.log(`[PLAY_AGAIN] Both players ready in custom room → restarting ${roomId}`);
+
+        gm.resetRoom(roomId);
+        const newRoom = gm.getRoom(roomId);
+        playAgainRequests.delete(roomId);
+
+        const sideA = Math.random() < 0.5 ? "x" : "o";
+        const sideB = sideA === "x" ? "o" : "x";
+
+        const socketA = [...io.sockets.sockets.values()].find(
+          (s) => s.data.nickname === room.players.x
+        );
+        const socketB = [...io.sockets.sockets.values()].find(
+          (s) => s.data.nickname === room.players.o
+        );
+
+        if (!socketA || !socketB) {
+          console.warn(`[PLAY_AGAIN] Missing sockets for rematch ${roomId}`);
+          return;
+        }
+
+        socketA.emit("matched", {
+          roomId,
+          side: sideA,
+          opponent: room.players.o,
         });
-      }, 50);
+        socketB.emit("matched", {
+          roomId,
+          side: sideB,
+          opponent: room.players.x,
+        });
+
+        setTimeout(() => {
+          io.to(roomId).emit("game_state", {
+            board: newRoom.board,
+            turn: newRoom.turn,
+            status: newRoom.status,
+          });
+        }, 50);
+      } else {
+        socket.emit("waiting_for_opponent", { opponent });
+      }
     } else {
-      socket.emit("waiting_for_opponent", { opponent });
+      // Normal match: immediately enter matchmaking to find ANY opponent
+      console.log(`[PLAY_AGAIN] ${nickname} entering matchmaking for new opponent`);
+
+      // Clean up old room if it exists
+      if (roomId) {
+        socket.leave(roomId);
+        socket.data.roomId = null;
+
+        // Check if room should be cleaned up
+        const room = gm.getRoom(roomId);
+        if (room) {
+          const playerSockets = [...io.sockets.sockets.values()].filter(
+            (s) => s.data.roomId === roomId
+          );
+
+          if (playerSockets.length === 0) {
+            gm.removeRoom(roomId);
+            playAgainRequests.delete(roomId);
+            console.log(`[PLAY_AGAIN] Room ${roomId} cleaned up`);
+          }
+        }
+      }
+
+      // Enter matchmaking immediately
+      socket.emit("searching_again");
+      await mm.enqueue({ socketId: socket.id, nickname });
+
+      // Try to find a match
+      const match = await mm.tryMatch();
+      if (match) await handleMatchFound(match);
+    }
+  });
+
+  socket.on("leave_room", async ({ roomId }) => {
+    const nickname = socket.data.nickname;
+    console.log(`[LEAVE_ROOM] ${nickname} leaving room ${roomId}`);
+    
+    if (!roomId || !socket.rooms.has(roomId)) return;
+
+    const room = gm.getRoom(roomId);
+    const isCustom = isCustomRoom(roomId);
+
+    socket.leave(roomId);
+    socket.data.roomId = null;
+
+    if (!room) return;
+
+    // If it's a custom room in waiting state, just clean up
+    if (isCustom && room.status === "waiting") {
+      gm.removeRoom(roomId);
+      releaseRoomCode(roomId);
+      console.log(`[LEAVE_ROOM] Cleaned up waiting custom room ${roomId}`);
+      return;
+    }
+
+    // If game is playing, handle as forfeit
+    if (room.status === "playing") {
+      const opponent = room.players.x === nickname ? room.players.o : room.players.x;
+
+      const opponentSocket = [...io.sockets.sockets.values()].find(
+        (s) => s.data.nickname === opponent && s.rooms.has(roomId)
+      );
+
+      if (opponentSocket) {
+        opponentSocket.emit("opponent_left", { winner: opponent });
+        opponentSocket.leave(roomId);
+        opponentSocket.data.roomId = null;
+      }
+
+      room.endTime = Date.now();
+      room.duration = room.startTime ? (room.endTime - room.startTime) / 1000 : 0;
+      room.status = "finished";
+      room.winner = opponent || "draw";
+
+      console.log("[LEAVE_ROOM] Recording result for room:", roomId);
+      try {
+        if (room.players.x && room.players.o) {
+          await recordResult({
+            x: room.players.x,
+            o: room.players.o,
+            winner: room.winner,
+            moves: room.moves || [],
+            duration: room.duration,
+          });
+          await broadcastLeaderboard();
+        }
+      } catch (err) {
+        console.error("[LEAVE_ROOM] Error recording result:", err);
+      }
+
+      gm.removeRoom(roomId);
+      if (isCustom) releaseRoomCode(roomId);
+      playAgainRequests.delete(roomId);
     }
   });
 
@@ -471,7 +574,7 @@ io.on("connection", (socket) => {
     }
 
     gm.removeRoom(roomId);
-    releaseRoomCode(roomId);
+    if (isCustomRoom(roomId)) releaseRoomCode(roomId);
     playAgainRequests.delete(roomId);
     console.log(`[CLEANUP] Room ${roomId} removed after leave`);
   });
@@ -481,7 +584,7 @@ io.on("connection", (socket) => {
       const roomId = socket.data.roomId;
 
       await mm.removeBySocket(socket.id);
-      await mm.releaseNickname(socket.id);
+      // Don't release nickname on disconnect - preserve it
 
       if (roomId) {
         const room = gm.getRoom(roomId);
