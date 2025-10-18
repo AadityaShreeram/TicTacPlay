@@ -16,11 +16,29 @@ const allowedOrigins = [
   "http://localhost:5173",
   "https://tictacplay-production.up.railway.app",
   "http://tictacplay-production.up.railway.app",
-  "https://tic-tac-play-gules.vercel.app" 
+  "https://tic-tac-play-gules.vercel.app"
 ];
 
 const corsOptions = {
-  origin: allowedOrigins,
+  origin: function (origin, callback) {
+    if (!origin) {
+      console.log('[CORS] Allowing request with no origin');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log('[CORS] Allowing known origin:', origin);
+      return callback(null, true);
+    }
+    
+    if (origin.match(/^https:\/\/.*\.vercel\.app$/)) {
+      console.log('[CORS] Allowing Vercel preview deployment:', origin);
+      return callback(null, true);
+    }
+    
+    console.log('[CORS] Blocking origin:', origin);
+    callback(new Error('Not allowed by CORS'));
+  },
   methods: ["GET", "POST", "OPTIONS"],
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -35,7 +53,25 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      if (!origin) {
+        console.log('[SOCKET.IO CORS] Allowing connection with no origin');
+        return callback(null, true);
+      }
+      
+      if (allowedOrigins.includes(origin)) {
+        console.log('[SOCKET.IO CORS] Allowing known origin:', origin);
+        return callback(null, true);
+      }
+      
+      if (origin.match(/^https:\/\/.*\.vercel\.app$/)) {
+        console.log('[SOCKET.IO CORS] Allowing Vercel preview:', origin);
+        return callback(null, true);
+      }
+      
+      console.log('[SOCKET.IO CORS] Blocking origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"]
@@ -608,6 +644,6 @@ io.on("connection", (socket) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`TicTacPlay backend running on port ${PORT}`);
+  console.log(`✅ TicTacPlay backend running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
