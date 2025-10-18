@@ -12,8 +12,9 @@ const { recordResult, getLeaderboard, resetLeaderboard } = require("./Leaderboar
 
 const app = express();
 
+const allowedOrigins = ["http://localhost:5173", "tictacplay-production.up.railway.app"]
 const corsOptions = {
-  origin: "http://localhost:5173",
+  origin: allowedOrigins,
   methods: ["GET", "POST", "OPTIONS"],
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -609,5 +610,4 @@ io.on("connection", (socket) => {
 
 server.listen(PORT, () => {
   console.log(`TicTacPlay backend running on port ${PORT}`);
-  console.log("WebSocket server listening on ws://localhost:4000");
 });
