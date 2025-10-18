@@ -190,13 +190,14 @@ export default function Matchmaking({ socket, onFindMatch, nickname: existingNam
         </div>
       </div>
 
-      {error && <p className="error-message">{error}</p>}
+
+      {error && <p className="validation-message error">{error}</p>}
       {available === true && !error && nickname && (
-        <p className="success-message">Nickname available!</p>
+        <p className="validation-message success">Nickname available!</p>
       )}
 
       {available === false && !checking && nickname && (
-        <p className="error-message">Choose a unique nickname</p>
+        <p className="validation-message error">That nickname is taken. Try another.</p>
       )}
 
       <button

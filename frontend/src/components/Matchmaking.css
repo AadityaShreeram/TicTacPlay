@@ -3,17 +3,23 @@
   text-align: center;
 }
 
+.input-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 60%;
+  max-width: 250px;
+  margin-bottom: 4px;
+}
+
 .matchmaking-input {
-  padding: 8px;
+  padding: 8px 35px 8px 8px;
   font-size: 16px;
   border-radius: 8px;
   border: 1px solid #555;
-  margin-right: 10px;
   background-color: #222;
   color: #fff300;
-  width: 60%;
-  max-width: 250px;
-  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .matchmaking-input::placeholder {
@@ -23,6 +29,46 @@
 .matchmaking-input:focus {
   outline: none;
   border-color: #fff300;
+}
+
+.status-indicator {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+}
+
+.status-indicator .checking {
+  color: #aaa;
+}
+
+.status-indicator .check {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.status-indicator .cross {
+  color: #f44336;
+  font-weight: bold;
+}
+
+.validation-message {
+  text-align: left;
+  font-size: 12px;
+  margin: 4px 0 12px 0;
+  padding-left: 4px;
+  width: 60%;
+  max-width: 250px;
+  display: inline-block;
+}
+
+.validation-message.error {
+  color: #f44336;
+}
+
+.validation-message.success {
+  color: #4caf50;
 }
 
 .matchmaking-button {
@@ -41,6 +87,12 @@
 .matchmaking-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(255, 243, 0, 0.3);
+}
+
+.matchmaking-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .room-buttons {
@@ -63,9 +115,13 @@
 }
 
 @media (max-width: 480px) {
-  .matchmaking-input {
+  .input-wrapper {
     width: 80%;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
+  }
+
+  .validation-message {
+    width: 80%;
   }
 
   .room-buttons {
