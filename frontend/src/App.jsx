@@ -27,7 +27,7 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://tictacplay-production.up.railway.app';
 
   useEffect(() => {
     let interval;

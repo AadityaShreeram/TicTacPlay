@@ -15,7 +15,8 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "https://tictacplay-production.up.railway.app",
-  "http://tictacplay-production.up.railway.app"
+  "http://tictacplay-production.up.railway.app",
+  "https://tic-tac-play-gules.vercel.app" 
 ];
 
 const corsOptions = {
