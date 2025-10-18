@@ -22,6 +22,13 @@ TicTacPlay allows players to:
 
 ---
 
+## 🌐 Live Validation Links
+
+* 🎨 **Frontend (Play Here):** [https://tic-tac-play-gules.vercel.app/](https://tic-tac-play-gules.vercel.app/)
+* ⚙️ **Backend (API Validation):** [https://tictacplay-production.up.railway.app/](https://tictacplay-production.up.railway.app/)
+
+---
+
 ## 🏗 Architecture
 
 ### ⚙️ Tech Stack & Reasoning
@@ -188,12 +195,6 @@ Run any migration scripts or let the backend auto-create tables on first use.
 
 ---
 
-## 🌐 Live Validation Links
-
-* 🎨 **Frontend (Play Here):** [https://tic-tac-play-gules.vercel.app/](https://tic-tac-play-gules.vercel.app/)
-* ⚙️ **Backend (API Validation):** [https://tictacplay-production.up.railway.app/](https://tictacplay-production.up.railway.app/)
-
----
 
 ## 🔍 Real-Time Backend Systems
 
