@@ -2,10 +2,11 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY backend/package*.json ./
+
 RUN npm ci --production
 
-COPY . .
+COPY backend ./
 
 ENV NODE_ENV=production
 EXPOSE 4000
