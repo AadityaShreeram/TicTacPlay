@@ -5,7 +5,10 @@ import Leaderboard from "./components/Leaderboard";
 import Matchmaking from "./components/Matchmaking";
 import "./App.css";
 
-const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:4000", {
+// FIXED: Define BACKEND_URL at the top
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://tictacplay-production.up.railway.app";
+
+const socket = io(BACKEND_URL, {
   withCredentials: true,
   transports: ["polling", "websocket"],
   upgrade: true
@@ -27,8 +30,6 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
 
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://tictacplay-production.up.railway.app';
-
   useEffect(() => {
     let interval;
     if (timerActive) {
@@ -42,7 +43,8 @@ export default function App() {
 
   const fetchLeaderboard = async () => {
     try {
-      const res = await fetch(`${backendUrl}/leaderboard`, {
+      // FIXED: Use BACKEND_URL instead of backendUrl
+      const res = await fetch(`${BACKEND_URL}/leaderboard`, {
         credentials: "include"
       });
       if (!res.ok) {
@@ -96,7 +98,7 @@ export default function App() {
       setIsCustomRoom(isCustom);
       setWaitingRoom(null);
       setWaitingForRematch(false);
-      setGameEnded(false); // Reset gameEnded immediately when matched
+      setGameEnded(false);
       
       if (isCustom) {
         handleMatched(data);
@@ -215,7 +217,6 @@ export default function App() {
 
   const handlePlayAgain = () => {
     if (!game?.roomId && !isCustomRoom) {
-      // For normal matches without valid room, just enter matchmaking
       console.log("[PLAY_AGAIN] No valid room, entering matchmaking directly");
       setSearching(true);
       setGameEnded(false);
@@ -227,7 +228,6 @@ export default function App() {
     console.log("[PLAY_AGAIN] Requesting rematch. Custom room:", isCustomRoom);
     
     if (!isCustomRoom) {
-      // For normal matches, immediately show searching state
       setSearching(true);
       setGameEnded(false);
       setWinner(null);
@@ -237,12 +237,10 @@ export default function App() {
   };
 
   const handleNewPlayer = () => {
-    // Clean up current game state
     if (game?.roomId) {
       socket.emit("leave_room", { roomId: game.roomId });
     }
     
-    // Reset all state
     setNickname(null);
     setGame(null);
     setWinner(null);
@@ -254,7 +252,6 @@ export default function App() {
     setGameEnded(false);
     setIsCustomRoom(false);
     
-    // Disconnect and reconnect socket
     socket.disconnect();
     setTimeout(() => socket.connect(), 100);
   };
