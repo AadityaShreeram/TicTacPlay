@@ -5,8 +5,9 @@ import Leaderboard from "./components/Leaderboard";
 import Matchmaking from "./components/Matchmaking";
 import "./App.css";
 
-// FIXED: Define BACKEND_URL at the top
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "https://tictacplay-production.up.railway.app";
+
+console.log("[CONFIG] Backend URL:", BACKEND_URL);
 
 const socket = io(BACKEND_URL, {
   withCredentials: true,
