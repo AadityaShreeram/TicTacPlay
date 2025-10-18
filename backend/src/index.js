@@ -12,7 +12,12 @@ const { recordResult, getLeaderboard, resetLeaderboard } = require("./Leaderboar
 
 const app = express();
 
-const allowedOrigins = ["http://localhost:5173", "tictacplay-production.up.railway.app"]
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://tictacplay-production.up.railway.app",
+  "http://tictacplay-production.up.railway.app"
+];
+
 const corsOptions = {
   origin: allowedOrigins,
   methods: ["GET", "POST", "OPTIONS"],
@@ -20,6 +25,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 200
 };
+
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(express.json());
@@ -28,7 +34,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: allowedOrigins,
     methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"]
@@ -123,23 +129,25 @@ async function handleMatchFound(match) {
   }, 50);
 }
 
+app.get("/", (req, res) => {
+  res.json({ status: "ok", message: "TicTacPlay backend running" });
+});
+
 app.get("/health", (req, res) => {
-  res.header("Access-Control-Allow-Credentials", "true");
   res.json({ status: "ok", message: "TicTacPlay backend running" });
 });
 
 app.get("/leaderboard", async (req, res) => {
-  res.header("Access-Control-Allow-Credentials", "true");
   try {
-    res.json(await getLeaderboard(50));
+    const leaderboard = await getLeaderboard(50);
+    res.json(leaderboard);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "db_error" });
+    console.error("[LEADERBOARD ERROR]", err);
+    res.status(500).json({ error: "db_error", message: err.message });
   }
 });
 
 app.post("/reset", async (req, res) => {
-  res.header("Access-Control-Allow-Credentials", "true");
   try {
     await resetLeaderboard();
     await broadcastLeaderboard(); 
@@ -360,13 +368,11 @@ io.on("connection", (socket) => {
     const isCustom = clientIsCustom || (roomId && isCustomRoom(roomId));
 
     if (isCustom) {
-      // Custom room: need to verify room exists and wait for both players
       const room = gm.getRoom(roomId);
       if (!room) {
         socket.emit("error_msg", { message: "room_not_found" });
         return;
       }
-      // Custom room: wait for both players to agree, then rematch
       if (!playAgainRequests.has(roomId)) playAgainRequests.set(roomId, new Set());
       const requestSet = playAgainRequests.get(roomId);
 
@@ -434,15 +440,12 @@ io.on("connection", (socket) => {
         socket.emit("waiting_for_opponent", { opponent });
       }
     } else {
-      // Normal match: immediately enter matchmaking to find ANY opponent
       console.log(`[PLAY_AGAIN] ${nickname} entering matchmaking for new opponent`);
 
-      // Clean up old room if it exists
       if (roomId) {
         socket.leave(roomId);
         socket.data.roomId = null;
 
-        // Check if room should be cleaned up
         const room = gm.getRoom(roomId);
         if (room) {
           const playerSockets = [...io.sockets.sockets.values()].filter(
@@ -457,11 +460,9 @@ io.on("connection", (socket) => {
         }
       }
 
-      // Enter matchmaking immediately
       socket.emit("searching_again");
       await mm.enqueue({ socketId: socket.id, nickname });
 
-      // Try to find a match
       const match = await mm.tryMatch();
       if (match) await handleMatchFound(match);
     }
@@ -481,7 +482,6 @@ io.on("connection", (socket) => {
 
     if (!room) return;
 
-    // If it's a custom room in waiting state, just clean up
     if (isCustom && room.status === "waiting") {
       gm.removeRoom(roomId);
       releaseRoomCode(roomId);
@@ -489,7 +489,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // If game is playing, handle as forfeit
     if (room.status === "playing") {
       const opponent = room.players.x === nickname ? room.players.o : room.players.x;
 
@@ -585,7 +584,6 @@ io.on("connection", (socket) => {
       const roomId = socket.data.roomId;
 
       await mm.removeBySocket(socket.id);
-      // Don't release nickname on disconnect - preserve it
 
       if (roomId) {
         const room = gm.getRoom(roomId);
@@ -610,4 +608,5 @@ io.on("connection", (socket) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`TicTacPlay backend running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
